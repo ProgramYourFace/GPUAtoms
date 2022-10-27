@@ -1,0 +1,125 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel AllocateNodes
+#pragma kernel AllocateBricks
+#pragma kernel SimplifyBricks
+
+#include "../VoxelCommon.cginc"
+
+//Input
+StructuredBuffer<uint> requestPtrs;//Point to node pool
+StructuredBuffer<uint> LRU;//Point to node groups
+//Output
+RWStructuredBuffer<uint> nodePtrs;//Point to childNode
+RWStructuredBuffer<uint> brickPtrs;//Point to childNode
+RWStructuredBuffer<float4> localization;//Point to childNode
+RWStructuredBuffer<uint> parents;//Point to childNode
+RWStructuredBuffer<uint> requestFlags;
+
+[numthreads(1,1,1)]
+void AllocateNodes (uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    //The "request" refers back to which node made the request
+    //The LRU holds pointers to an free place in the node pool
+    uint nodeIdx = requestPtrs[i];
+    //Clear the request buffer;
+    requestFlags[nodeIdx] = 0;
+    uint childNodeIdx = LRU[i];
+    
+    uint parentIdx = parents[childNodeIdx];
+    nodePtrs[parentIdx] = NULL_PTR;
+    nodePtrs[nodeIdx] = childNodeIdx | DIV_MASK;//Allow div
+    parents[childNodeIdx] = nodeIdx;
+
+    uint nodeLocalIdx = nodeIdx % TILE_NODE_COUNT;
+    uint3 nodeLocalPos = CubeIdxToOffset(nodeLocalIdx, TILE_WIDTH);
+    float4 parentBox = localization[nodeIdx / TILE_NODE_COUNT];
+    float childSize = parentBox.w * 0.5;
+    localization[childNodeIdx] = float4(parentBox.xyz + nodeLocalPos * childSize, childSize);
+    
+    childNodeIdx *= 8;
+    uint3 childPos = 0;
+    uint childIdx;
+    for(; childPos.x < 2;childPos.x++) {
+        for(; childPos.y < 2;childPos.y++) {
+            for(; childPos.z < 2;childPos.z++) {
+                childIdx = childNodeIdx + 
+                    childPos.x + 
+                    childPos.y * 2 + 
+                    childPos.z * 4;
+                
+                nodePtrs[childIdx] = NULL_PTR;
+                brickPtrs[childIdx] = NULL_PTR;
+            }
+        }
+    }
+}
+
+//TODO: increase thread block to something like 32
+[numthreads(1,1,1)]
+void AllocateBricks (uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    //The request refers back to which node made the request
+    //The LRU holds pointers to places in the brick pool
+    uint nodeIdx = requestPtrs[i];
+    //Clear the request buffer
+    requestFlags[nodeIdx] = 0;
+    uint brickIdx = LRU[i];
+    uint parentIdx = parents[brickIdx];
+    brickPtrs[parentIdx] = NULL_PTR;
+    brickPtrs[nodeIdx] = brickIdx;
+    parents[brickIdx] = nodeIdx;
+}
+
+
+uint _BrickPoolWidth;
+RWTexture3D<float4> bricks;
+groupshared uint INSIDECOUNT[1];
+groupshared uint CONSTCOLOR[4];
+
+[numthreads(BRICK_WIDTH,BRICK_WIDTH,BRICK_WIDTH)]
+void SimplifyBricks(uint3 group : SV_GroupID, uint3 cell : SV_GroupThreadID, uint cellIdx : SV_GroupIndex) {
+    if(all(cell == 0)) {
+        INSIDECOUNT[0] = 0;
+        CONSTCOLOR[0] = 0;CONSTCOLOR[1] = 0;CONSTCOLOR[2] = 0;CONSTCOLOR[3] = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint nodeIdx = requestPtrs[group.x];
+    uint brickIdx = brickPtrs[nodeIdx];
+    uint3 brickOffset = CubeIdxToOffset(brickIdx, _BrickPoolWidth) * BRICK_WIDTH;
+
+    float4 value = bricks[brickOffset + cell];
+
+    // int sameCount = WaveActiveCountBits(value.w <= THRESHOLD);
+    // if(WaveIsFirstLane()) { InterlockedAdd(INSIDECOUNT[0], sameCount); }
+    InterlockedAdd(INSIDECOUNT[0], value.w <= THRESHOLD);
+    
+    GroupMemoryBarrierWithGroupSync();
+
+    int sameCount = INSIDECOUNT[0];
+    if(sameCount == 0 || sameCount == (BRICK_CELL_COUNT)) {
+        uint4 byteValue = round(value * 255);
+        InterlockedAdd(CONSTCOLOR[0], byteValue[0]);
+        InterlockedAdd(CONSTCOLOR[1], byteValue[1]);
+        InterlockedAdd(CONSTCOLOR[2], byteValue[2]);
+        InterlockedAdd(CONSTCOLOR[3], byteValue[3]);
+        
+        GroupMemoryBarrierWithGroupSync();
+
+        uint4 constValue = round(float4(
+            CONSTCOLOR[0], CONSTCOLOR[1], 
+            CONSTCOLOR[2], CONSTCOLOR[3]) 
+            / (BRICK_CELL_COUNT));
+        
+        if(all(cell == 0)) {
+            nodePtrs[nodeIdx] &= PTR_MASK;
+            brickPtrs[nodeIdx] = constValue[0] << 24 | 
+                constValue[1] << 16 | 
+                constValue[2] << 8 | 
+                constValue[3];
+            parents[brickIdx] = NULL_PTR;
+        }
+    }
+}

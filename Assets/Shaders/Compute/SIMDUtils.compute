@@ -1,0 +1,67 @@
+#pragma use_dxc
+#pragma kernel GetSimdWidth
+#pragma kernel PrefixSumUp
+#pragma kernel ZeroIndex
+#pragma kernel PrefixSumDown
+#pragma kernel WriteArgsFromCounts
+#pragma kernel MaskLRU
+
+
+RWStructuredBuffer<uint> simdWidth;
+[numthreads(1, 1, 1)]
+void GetSimdWidth (uint3 id : SV_DispatchThreadID)
+{
+    simdWidth[0] = WaveGetLaneCount();
+}
+
+RWStructuredBuffer<uint> counts;
+
+//1, 32, 1024
+uint stride;
+uint parentStride;
+
+[numthreads(32, 1, 1)]
+void PrefixSumUp (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = (id.x + 1) * stride - 1;
+    uint sum = WaveActiveSum(counts[idx]);
+    uint pIdx = ((id.x / WaveGetLaneCount()) + 1) * parentStride - 1;
+    counts[pIdx] = sum;
+}
+
+uint index;
+[numthreads(1,1,1)]
+void ZeroIndex() {
+    counts[index + 1] = counts[index];
+    counts[index] = 0;
+}
+
+[numthreads(32, 1, 1)]
+void PrefixSumDown (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = (id.x + 1) * stride - 1;
+    uint pIdx = ((id.x / WaveGetLaneCount()) + 1) * parentStride - 1;
+    counts[idx] = WavePrefixSum(counts[idx]) + counts[pIdx];
+}
+
+uint validCountIdx;
+uint argsOffset;
+uint threadGroupsX;
+uint countCap;
+RWStructuredBuffer<uint> indirectArgs;
+[numthreads(1,1,1)]
+void WriteArgsFromCounts() {
+    indirectArgs[argsOffset] = ceil(min(counts[validCountIdx], countCap) / threadGroupsX);
+    indirectArgs[argsOffset + 1] = 1;
+    indirectArgs[argsOffset + 2] = 1;
+}
+
+StructuredBuffer<uint> framePredicate;
+StructuredBuffer<uint> usage;
+StructuredBuffer<uint> LRU;
+RWStructuredBuffer<uint> LRUMask;
+[numthreads(32,1,1)]
+void MaskLRU(uint3 id : SV_DispatchThreadID) {
+    int i = id.x;
+    LRUMask[i] = usage[LRU[i]] == framePredicate[0];
+}

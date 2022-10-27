@@ -1,0 +1,48 @@
+#pragma multi_compile PRED_NOT_EQUAL PRED_EQUAL
+#pragma multi_compile WRITE_END WRITE_START
+#pragma multi_compile OUTPUT_OTHER OUTPUT_STREAM OUTPUT_INDEX
+#pragma use_dxc
+#pragma kernel Compact
+
+uint predicate;
+StructuredBuffer<uint> stream;
+RWStructuredBuffer<uint> counts;
+RWStructuredBuffer<uint> output;
+#if OUTPUT_OTHER
+    StructuredBuffer<uint> other;
+#endif
+
+uint streamSize;
+uint outputSize;
+#if WRITE_END
+    uint validCountIdx;
+#endif
+
+[numthreads(128, 1, 1)]
+void Compact (uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    #if PRED_NOT_EQUAL
+        uint valid = i < streamSize && stream[i] != predicate ? 1 : 0;
+    #else
+        uint valid = i < streamSize && stream[i] == predicate ? 1 : 0;
+    #endif
+    uint idx = WavePrefixSum(valid);
+    uint pIdx = i / WaveGetLaneCount();
+
+    #if WRITE_END
+        uint writeIdx = counts[pIdx] + idx + (streamSize - counts[validCountIdx]);
+    #else
+        uint writeIdx = counts[pIdx] + idx;
+    #endif
+
+    if(valid && writeIdx < outputSize) {
+        #if OUTPUT_OTHER
+            output[writeIdx] = other[i];
+        #elif OUTPUT_STREAM
+            output[writeIdx] = stream[i];
+        #else 
+            output[writeIdx] = i;
+        #endif
+    }
+}

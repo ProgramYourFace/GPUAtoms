@@ -1,0 +1,20 @@
+#pragma multi_compile PRED_NOT_EQUAL PRED_EQUAL
+#pragma kernel CountValid
+#pragma use_dxc
+
+int streamSize;
+uint predicate;
+StructuredBuffer<uint> stream;
+RWStructuredBuffer<uint> counts;
+
+[numthreads(128, 1, 1)]
+void CountValid (uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    #if PRED_NOT_EQUAL
+        uint valid = i < streamSize && stream[i] != predicate ? 1 : 0;
+    #else
+        uint valid = i < streamSize && stream[i] == predicate ? 1 : 0;
+    #endif
+    counts[i / WaveGetLaneCount()] = WaveActiveCountBits(valid);
+}

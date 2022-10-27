@@ -1,0 +1,128 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Model
+#include "../VoxelCommon.cginc"
+#define GlobalWorldTime 0.0
+#include "../Noise.cginc"
+
+//Input
+uint _BrickPoolWidth;
+StructuredBuffer<uint> brickPtrs;
+StructuredBuffer<uint> requestPtrs;
+StructuredBuffer<float4> localization;
+RWTexture3D<float4> bricks;
+
+float eikonal1d(float h, float v, float z)
+{
+    float u = min(min(h, v), z);
+	return u + 1/* negSign(hv)*/;
+}
+
+float eikonal2d(float h, float v)
+{
+    float hv = h + v;
+    float d = hv*hv - 2.0 * (h*h + v*v - 1.0);
+    if (d < 1.0) return SDF_RADIUS;
+   	return 0.5 * (hv + sqrt(d) /* * negSign(hv)*/);
+}
+
+float eikonal3d(float h, float v, float z)
+{
+    float hvz = h + v + z;
+    float d = hvz*hvz - 3.0 * (h*h + v*v + z*z - 1.0);
+    if (d < 0.0) return SDF_RADIUS;
+   	return 0.33333333 * (hvz + sqrt(d) /* * negSign(hv)*/);
+}
+
+groupshared float SDF[BRICK_WIDTH * BRICK_WIDTH * BRICK_WIDTH];
+
+[numthreads(BRICK_WIDTH,BRICK_WIDTH,BRICK_WIDTH)]
+void Model (uint3 group : SV_GroupID, int3 cell : SV_GroupThreadID)
+{
+    uint nodeIdx = requestPtrs[group.x];
+    float4 parentBox = localization[nodeIdx / TILE_NODE_COUNT];
+    uint childIdx = nodeIdx % TILE_NODE_COUNT;
+    uint3 childPos = CubeIdxToOffset(childIdx, TILE_WIDTH);
+    float size = parentBox.w * 0.5;
+    float3 corner = parentBox.xyz + childPos * size;
+    float cellSize = size / (BRICK_LIDX);
+    float3 pos = corner + cellSize * cell;
+
+    float dist = distance(pos, 8.0) - 8.0 + fbm(pos) * 6.0;
+
+    uint sdfIdx = CubeOffsetToIdx(cell, BRICK_WIDTH);
+    //Write
+    SDF[sdfIdx] = dist;
+    //Sync
+    GroupMemoryBarrierWithGroupSync();
+
+    uint3 N_I = uint3(
+        CubeOffsetToIdx(uint3(max(cell.x - 1, 0), cell.y, cell.z), BRICK_WIDTH), 
+        CubeOffsetToIdx(uint3(cell.x, max(cell.y - 1, 0), cell.z), BRICK_WIDTH), 
+        CubeOffsetToIdx(uint3(cell.x, cell.y, max(cell.z - 1, 0)), BRICK_WIDTH));
+    uint3 P_I = uint3(
+        CubeOffsetToIdx(uint3(min(cell.x + 1, BRICK_LIDX), cell.y, cell.z), BRICK_WIDTH), 
+        CubeOffsetToIdx(uint3(cell.x, min(cell.y + 1, BRICK_LIDX), cell.z), BRICK_WIDTH), 
+        CubeOffsetToIdx(uint3(cell.x, cell.y, min(cell.z + 1, BRICK_LIDX)), BRICK_WIDTH));
+    //Read
+    float3 N = float3(SDF[N_I.x], SDF[N_I.y], SDF[N_I.z]);
+    float3 P = float3(SDF[P_I.x], SDF[P_I.y], SDF[P_I.z]);
+    
+    bool IN = dist >= 0;
+    bool EDGE = any((N >= 0) != IN) || any((P >= 0) != IN);
+    float SIGN = IN ? 1 : -1;
+    dist = lerp(
+        SIGN * SDF_RADIUS,//Otherwise they should be amplified to the radius
+        smoothstep(-2.0, 2.0, dist / cellSize) * 2.0 - 1.0,//All border distances should be clamped to -1 to 1
+        EDGE);
+
+    [unroll]
+    for(int i = 0;i < SDF_ITERATIONS;i++) {
+        //Sync
+        GroupMemoryBarrierWithGroupSync();
+        //Write
+        SDF[sdfIdx] = dist;
+        //Sync
+        GroupMemoryBarrierWithGroupSync();
+        //Read
+        if(!EDGE) {
+            float3 U = min(
+                float3(SDF[N_I.x], SDF[N_I.y], SDF[N_I.z]) * SIGN, 
+                float3(SDF[P_I.x], SDF[P_I.y], SDF[P_I.z]) * SIGN);
+            
+            dist = min(
+                dist * SIGN,
+                min(
+                    min(eikonal2d(U.x, U.y), eikonal2d(U.x, U.z)), 
+                    min(eikonal2d(U.y, U.z), eikonal3d(U.x, U.y, U.z))
+                )
+            ) * SIGN;
+        }
+    }
+
+    dist = clamp(0.5 + 0.5 * dist / SDF_RADIUS, 0.0, 1.0);
+    float4 color = float4(pos / 16.0, dist);
+    uint brickIdx = brickPtrs[nodeIdx];
+    uint3 brickOffset = CubeIdxToOffset(brickIdx, _BrickPoolWidth) * BRICK_WIDTH;
+    bricks[brickOffset + cell] = color;
+}
+// Pixel Model
+// [numthreads(BRICK_WIDTH,BRICK_WIDTH,BRICK_WIDTH)]
+// void Model (uint3 group : SV_GroupID, uint3 cell : SV_GroupThreadID)
+// {
+//     uint nodeIdx = requestPtrs[group.x];
+//     float4 parentBox = localization[nodeIdx / TILE_NODE_COUNT];
+//     uint childIdx = nodeIdx % TILE_NODE_COUNT;
+//     uint3 childPos = CubeIdxToOffset(childIdx, TILE_WIDTH);
+//     float size = parentBox.w * 0.5;
+//     float3 corner = parentBox.xyz + childPos * size;
+    
+//     float3 pos = corner + size * (cell + 0.5) / BRICK_WIDTH;
+
+//     float4 color = float4(pos / 16.0, distance(pos, 8.0) / 8.0);
+//     float perlin = fbm(pos / 4.0);
+//     color.w += (perlin - 0.5);
+
+//     uint brickIdx = brickPtrs[nodeIdx];
+//     uint3 brickOffset = CubeIdxToOffset(brickIdx, _BrickPoolWidth) * BRICK_WIDTH;
+//     bricks[brickOffset + cell] = color;
+// }
