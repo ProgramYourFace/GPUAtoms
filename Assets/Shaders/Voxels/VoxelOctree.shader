@@ -5,6 +5,7 @@ Shader "Voxels/Octree"
         _Box ("Box", Vector) = (0, 0, 0, 16)
         _MaxDepth ("Max Depth", Integer) = 2
         _SDFSteps ("SDF Steps", Int) = 19
+        _OctreeSteps ("Octree Steps", Int) = 20
     }
     SubShader
     {
@@ -35,6 +36,7 @@ Shader "Voxels/Octree"
             };
 
             // float _Threshold;
+            uint _OctreeSteps;
             uint _SDFSteps;
             float4 _Box;
 
@@ -301,7 +303,7 @@ Shader "Voxels/Octree"
 
                 float res = -1.0;
                 [loop]
-                while(t < end) {
+                while(t < end && stepCount < _OctreeSteps) {
                     p = ro + rd * t;
                     stepCount++;
 
@@ -341,10 +343,11 @@ Shader "Voxels/Octree"
                 //     float contentToBrick = (_BrickWidth - 1.0) / _Box.w;
                 //     t = marchBrick(contentToBrick * (ro + rd * I.x), rd, 0, 0, (I.y - I.x) * contentToBrick, color) / contentToBrick;
                 // }
-                // clip(t);
+                clip(t);
                 // return t / 16.0;
-                // if(t >= 0.0) 
-                return lerp(t >= 0.0 ? color : 0.0, float4(1.0, 0.0, 0.0, 1.0), stepCount / 16.0);
+                // if(t >= 0.0)
+                return color * t / 16.0; 
+                // return lerp(t >= 0.0 ? color : 0.0, float4(1.0, 0.0, 0.0, 1.0), stepCount / 16.0);
                 // else return float4(stepCount / 10.0, 0, 0, 1);
             }
             ENDCG
