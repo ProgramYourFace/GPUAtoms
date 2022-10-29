@@ -39,18 +39,19 @@ public class VoxelScene : MonoBehaviour
     public Material m_material;
     public RenderTexture rt;
 
-    // [Header("Requests")]
-    // public uint[] requests;
-    // public uint[] counts;
-    // public uint[] list;
-    // public uint[] args;
-    // [Header("Nodes")]
-    // public uint[] nodePtrs;
-    // public uint[] nodeContent;
-    // public uint[] nodeLRU;
-    // [Header("Bricks")]
-    // public float4[] boxes;
-    // public uint[] brick;
+    //public bool poll;
+    //[Header("Requests")]
+    //public uint[] requests;
+    //public uint[] counts;
+    //public uint[] list;
+    //public uint[] args;
+    //[Header("Nodes")]
+    //public uint[] nodePtrs;
+    //public uint[] nodeContent;
+    //public uint[] nodeLRU;
+    //[Header("Bricks")]
+    //public float4[] boxes;
+    //public uint[] brick;
     // [Header("Usage")]
     // public uint 
 
@@ -122,6 +123,27 @@ public class VoxelScene : MonoBehaviour
             uint frame = m_cache.UpdateFramePredicate();
             m_material.SetInteger("_Frame", (int)frame);
         }
+
+        //if(poll)
+        //{
+        //    poll = false;
+        //
+        //    requests = new uint[m_cache.m_requestResources.requests.count];
+        //    counts = new uint[m_cache.m_requestResources.counts.count];
+        //    list = new uint[m_cache.m_requestResources.list.count];
+        //    args = new uint[m_cache.m_requestResources.args.count];
+        //    m_cache.m_requestResources.requests.GetData(requests);
+        //    m_cache.m_requestResources.counts.GetData(counts);
+        //    m_cache.m_requestResources.list.GetData(list);
+        //    m_cache.m_requestResources.args.GetData(args);
+        //
+        //    nodePtrs = new uint[m_cache.m_nodePointerPool.count];
+        //    nodeContent = new uint[m_cache.m_nodeContentPool.count];
+        //    nodeLRU = new uint[m_cache.m_nodeUsageResources.LRU.count];
+        //    m_cache.m_nodePointerPool.GetData(nodePtrs);
+        //    m_cache.m_nodeContentPool.GetData(nodeContent);
+        //    m_cache.m_nodeUsageResources.LRU.GetData(nodeLRU);
+        //}
     }
 
     void OnDestroy() {

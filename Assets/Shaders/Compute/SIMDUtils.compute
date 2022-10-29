@@ -55,7 +55,6 @@ void WriteArgsFromCounts() {
     indirectArgs[argsOffset + 1] = 1;
     indirectArgs[argsOffset + 2] = 1;
 }
-
 StructuredBuffer<uint> framePredicate;
 StructuredBuffer<uint> usage;
 StructuredBuffer<uint> LRU;

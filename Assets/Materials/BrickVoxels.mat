@@ -97,7 +97,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints:
-    - _MaxDepth: 2
+    - _MaxDepth: 4
     m_Floats:
     - _AlphaClip: 0
     - _AlphaToMask: 0
@@ -119,6 +119,7 @@ Material:
     - _MaxDepth: 3
     - _Metallic: 0
     - _OcclusionStrength: 1
+    - _OctreeSteps: 40
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1

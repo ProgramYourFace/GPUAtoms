@@ -169,24 +169,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_step: 0
   m_cacheSettings:
-    m_nodeTileCount: 128
+    m_nodeTileCount: 262144
     m_nodeTileWidth: 2
-    m_brickPoolWidth: 32
+    m_brickPoolWidth: 48
     m_brickWidth: 8
-    m_maxRequests: 128
+    m_maxRequests: 256
     m_allocationUtils: {fileID: 7200000, guid: aa2289996425a3e49b738ad204a05969, type: 3}
     m_model: {fileID: 7200000, guid: 97bf5df166f8232448432488f7330ab1, type: 3}
   m_hull: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   m_material: {fileID: 2100000, guid: 4533ba34004af0040993bf0099348319, type: 2}
   rt: {fileID: 0}
-  requests: 
-  counts: 
-  list: 
-  args: 
-  nodePtrs: 
-  nodeContent: 
-  nodeLRU: 
-  boxes: []
+  m_renderPass:
+    render: 1
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -423,7 +417,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Version: 2
+  m_Version: 3
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
   m_LightLayerMask: 1
@@ -433,7 +427,7 @@ MonoBehaviour:
   m_ShadowRenderingLayers: 1
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
-  m_SoftShadowQuality: 1
+  m_SoftShadowQuality: 2
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

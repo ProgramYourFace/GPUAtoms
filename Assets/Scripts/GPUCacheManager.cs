@@ -71,12 +71,15 @@ public class GPUCacheManager {
     }
 
     public void WriteCommands(CommandBuffer cmd) {
-        m_nodeUsageResources.LRUSort(cmd, m_framePredicate);
-        m_brickUsageResources.LRUSort(cmd, m_framePredicate);
+        m_nodeUsageResources.LRUSort(cmd, m_framePredicate, true);
+        m_brickUsageResources.LRUSort(cmd, m_framePredicate, true);
 
         int allocatorK;
-        m_requestResources.RequestsToList(cmd, 1, false, 1);
+        m_requestResources.RequestsToList(cmd, 1, false);
+
         ComputeShader allocUtils = m_settings.m_allocationUtils;
+        m_requestResources.WriteArgs(cmd, allocUtils, m_nodeUsageResources.counts, (uint)m_nodeUsageResources.LRU.count);
+
         allocatorK = allocUtils.FindKernel("AllocateNodes");
         cmd.SetComputeBufferParam(allocUtils, allocatorK, "requestPtrs", m_requestResources.list);
         cmd.SetComputeBufferParam(allocUtils, allocatorK, "LRU", m_nodeUsageResources.LRU);
@@ -88,7 +91,9 @@ public class GPUCacheManager {
 
         cmd.DispatchCompute(allocUtils, allocatorK, m_requestResources.args, 0);
 
-        m_requestResources.RequestsToList(cmd, 2, false, 1);
+        m_requestResources.RequestsToList(cmd, 2, false);
+        m_requestResources.WriteArgs(cmd, allocUtils, m_brickUsageResources.counts, (uint)m_brickUsageResources.LRU.count);
+
         allocatorK = allocUtils.FindKernel("AllocateBricks");
         cmd.SetComputeBufferParam(allocUtils, allocatorK, "requestPtrs", m_requestResources.list);
         cmd.SetComputeBufferParam(allocUtils, allocatorK, "LRU", m_brickUsageResources.LRU);
@@ -105,6 +110,7 @@ public class GPUCacheManager {
         cmd.SetComputeBufferParam(model, modelK, "brickPtrs", m_nodeContentPool);
         cmd.SetComputeBufferParam(model, modelK, "localization", m_requestResources.localization);
         cmd.SetComputeTextureParam(model, modelK, "bricks", m_brickColorPool);
+
         cmd.DispatchCompute(model, modelK, m_requestResources.args, 0);
 
         allocatorK = allocUtils.FindKernel("SimplifyBricks");

@@ -31,7 +31,7 @@ public struct GPUCacheUsageResources {
         counts = GPUCacheUtils.CreateCountsBuffer(size);
     }
 
-    public void LRUSort(CommandBuffer cmd, GraphicsBuffer framePredicate) {
+    public void LRUSort(CommandBuffer cmd, GraphicsBuffer framePredicate, bool writeUsedFirst = true) {
         ComputeShader utils = GPUCacheUtils.UtilsShader;
         int maskK = utils.FindKernel("MaskLRU");
         cmd.SetComputeBufferParam(utils, maskK, "framePredicate", framePredicate);
@@ -40,16 +40,8 @@ public struct GPUCacheUsageResources {
         cmd.SetComputeBufferParam(utils, maskK, "LRUMask", mask);
         cmd.DispatchCompute(utils, maskK, usage.count);
 
-        //Write 0 to beginning
-        cmd.CountValid(mask, counts, 0, false);
-        cmd.PrefixSum(counts);
-        cmd.Compact(mask, counts, 0, LRUOutput, false, false, 
-        CompactOutputSource.OTHER, LRU);
-        //Write other to end
-        cmd.CountValid(mask, counts, 0, true);
-        cmd.PrefixSum(counts);
-        cmd.Compact(mask, counts, 0, LRUOutput, true, true, 
-        CompactOutputSource.OTHER, LRU);
+        cmd.StreamCompaction(mask, counts, 0, LRUOutput, writeUsedFirst, writeUsedFirst, CompactOutputSource.OTHER, LRU);
+        cmd.StreamCompaction(mask, counts, 0, LRUOutput, !writeUsedFirst, !writeUsedFirst, CompactOutputSource.OTHER, LRU);
 
         cmd.CopyBuffer(LRUOutput, LRU);
     }
@@ -106,9 +98,28 @@ public struct GPUCacheRequestResources {
         args.Release();
     }
 
-    public void RequestsToList(CommandBuffer cmd, int predicate, bool notEqual, int threadGroupsX) {
+    public void RequestsToList(CommandBuffer cmd, int predicate, bool notEqual) {
         cmd.StreamCompaction(requests, counts, predicate, list, notEqual, false, CompactOutputSource.INDEX);
-        cmd.WriteArgsFromCounts(counts, args, 0, threadGroupsX, requests.count);
+    }
+
+    public void WriteArgs(CommandBuffer cmd, ComputeShader allocUtils, GraphicsBuffer unusedCounts, uint unusedStreamSize)
+    {
+        int kernel = allocUtils.FindKernel("WriteAllocateArgs");
+        int unusedTotalIdx = Mathf.Max(Mathf.FloorToInt((unusedStreamSize - 1) / GPUCacheUtils.GPUWaveWidth) + 1, 1);
+        int requestTotalIdx = Mathf.Max(Mathf.FloorToInt((requests.count - 1) / GPUCacheUtils.GPUWaveWidth) + 1, 1);
+        Debug.Log(list.count);
+        Debug.Log(unusedTotalIdx);
+        Debug.Log(requestTotalIdx);
+        cmd.SetComputeIntParam(allocUtils, "requestCap", list.count);
+
+        cmd.SetComputeIntParam(allocUtils, "unusedTotalIdx", unusedTotalIdx);
+        cmd.SetComputeIntParam(allocUtils, "requestTotalIdx", requestTotalIdx);
+
+        cmd.SetComputeBufferParam(allocUtils, kernel, "unusedCounts", unusedCounts);
+        cmd.SetComputeBufferParam(allocUtils, kernel, "requestCounts", counts);
+        cmd.SetComputeBufferParam(allocUtils, kernel, "indirectArgs", args);
+
+        cmd.DispatchCompute(allocUtils, kernel, 1, 1, 1);
     }
     
     // public void ListToSubList(CommandBuffer cmd, GraphicsBuffer predicate, bool notEqual, int threadGroupsX) {
