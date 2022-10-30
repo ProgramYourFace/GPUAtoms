@@ -1,4 +1,5 @@
 // Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel WriteAllocateArgs
 #pragma kernel AllocateNodes
 #pragma kernel AllocateBricks
 #pragma kernel SimplifyBricks
@@ -14,6 +15,21 @@ RWStructuredBuffer<uint> brickPtrs;//Point to childNode
 RWStructuredBuffer<float4> localization;//Point to childNode
 RWStructuredBuffer<uint> parents;//Point to childNode
 RWStructuredBuffer<uint> requestFlags;
+
+uint requestCap;
+uint unusedTotalIdx;
+uint requestTotalIdx;
+StructuredBuffer<uint> unusedCounts;
+StructuredBuffer<uint> requestCounts;
+RWStructuredBuffer<uint> indirectArgs;
+[numthreads(1, 1, 1)]
+void WriteAllocateArgs() {
+    //Min of unused leftover, request count, max request count
+    uint count = min(min(unusedCounts[unusedTotalIdx], requestCounts[requestTotalIdx]), requestCap);
+    indirectArgs[0] = count;
+    indirectArgs[1] = 1;
+    indirectArgs[2] = 1;
+}
 
 [numthreads(1,1,1)]
 void AllocateNodes (uint3 id : SV_DispatchThreadID)
